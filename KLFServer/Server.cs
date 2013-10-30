@@ -2461,7 +2461,18 @@ namespace KMPServer
 		
 		public void startDatabase()
 		{
-			SQLiteConnection diskDB = new SQLiteConnection(DB_FILE_CONN);
+            SQLiteConnection diskDB = null;
+            try
+            {
+                diskDB = new SQLiteConnection(DB_FILE_CONN);
+            }
+            catch
+            {
+                Console.WriteLine("SQLite DLL was not found. Unable to start the database. Quitting.");
+                Console.ReadKey();
+                Environment.Exit(1);
+            }
+
 			diskDB.Open();
 			universeDB = new SQLiteConnection("Data Source=:memory:");
 			universeDB.Open();               

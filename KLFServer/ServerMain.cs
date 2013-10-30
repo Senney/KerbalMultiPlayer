@@ -6,6 +6,8 @@ using System.Text;
 using System.Net;
 using System.IO;
 
+using KMP;
+
 namespace KMPServer
 {
 	class ServerMain
@@ -17,10 +19,10 @@ namespace KMPServer
 		{
 
 			Console.Title = "KMP Server " + KMPCommon.PROGRAM_VERSION;
-			Console.WriteLine("KMP Server version " + KMPCommon.PROGRAM_VERSION);
-			Console.WriteLine("    Created by Shaun Esau");
+            KMPLogger.info("KMP Server Version: " + KMPCommon.PROGRAM_VERSION);
+            KMPLogger.info("    Created by Shaun Esau. Modified by Sean Heintz (sean.heintz@gmail.com)");
 			Console.WriteLine("    Based on Kerbal LiveFeed created by Alfred Lam");
-			Console.WriteLine();
+            Console.WriteLine();
 
 			ServerSettings settings = new ServerSettings();
 			settings.readConfigFile();
