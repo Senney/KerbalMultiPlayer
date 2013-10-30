@@ -201,6 +201,7 @@ namespace KMPServer
 
 		public void clearState()
 		{
+            KMPLogger.debug("Clearing server state.");
 			safeAbort(listenThread);
 			safeAbort(commandThread);
 			safeAbort(connectionThread);
@@ -208,6 +209,7 @@ namespace KMPServer
 
 			if (clients != null)
 			{
+                KMPLogger.debug("Disposing of clients.");
 				for (int i = 0; i < clients.Length; i++)
 				{
 					clients[i].endReceivingMessages();
@@ -220,10 +222,12 @@ namespace KMPServer
 			{
 				try
 				{
+                    KMPLogger.debug("Attemepting to stop TCP listener.");
 					tcpListener.Stop();
 				}
 				catch (System.Net.Sockets.SocketException)
 				{
+                    KMPLogger.warning("Unable to stop tcp listener.");
 				}
 			}
 
@@ -231,11 +235,13 @@ namespace KMPServer
 			{
 				try
 				{
+                    KMPLogger.debug("Attempting to stop HTTP Listener.");
 					httpListener.Stop();
 					httpListener.Close();
 				}
-				catch (ObjectDisposedException)
+				catch (ObjectDisposedException e)
 				{
+                    KMPLogger.warning("Unable to stop and close HTTP listener.\n" + e.Message);
 				}
 			}
 
@@ -243,9 +249,13 @@ namespace KMPServer
 			{
 				try
 				{
+                    KMPLogger.debug("Attempting to close UDP client.");
 					udpClient.Close();
 				}
-				catch { }
+				catch 
+                {
+                    KMPLogger.warning("Unable to close udp client.");
+                }
 			}
 
 			udpClient = null;
@@ -253,10 +263,17 @@ namespace KMPServer
 			if (universeDB != null && universeDB.State != ConnectionState.Closed)
 			{
 				try {
+                    KMPLogger.debug("Attempting to backup universe database.");
 					backupDatabase();
+
+                    KMPLogger.debug("Stopping universe database.");
 					universeDB.Close ();
-					universeDB.Dispose();
-				} catch {}
+                    universeDB.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    KMPLogger.warning("Unable to backup and close database.\n" + ex.Message);
+                }
 			}
 			
 			startDatabase();
@@ -264,6 +281,8 @@ namespace KMPServer
 
 		public void saveScreenshot(byte[] bytes, String player)
 		{
+            KMPLogger.debug("Saving screenshot for player: " + player);
+
 			if (!Directory.Exists(SCREENSHOT_DIR))
 			{
 				//Create the screenshot directory
@@ -302,8 +321,9 @@ namespace KMPServer
 
 					File.WriteAllBytes(filename, trimmed_bytes);
 				}
-				catch (Exception)
+				catch (Exception e)
 				{
+                    KMPLogger.warning("Unable to save screenshot: " + e.Message);
 				}
 			}
 		}
@@ -318,8 +338,8 @@ namespace KMPServer
 					if (join)
 						thread.Join();
 				}
-				catch (ThreadStateException) { }
-				catch (ThreadInterruptedException) { }
+                catch (ThreadStateException) { KMPLogger.warning("safeAbort threw a ThreadStateException."); }
+                catch (ThreadInterruptedException) { KMPLogger.warning("safeAbort threw a ThreadInterruptedException."); }
 			}
 		}
 
@@ -336,6 +356,8 @@ namespace KMPServer
 
 		public void hostingLoop()
 		{
+            KMPLogger.debug("Starting hosting loop.");
+
 			clearState();
 
 			//Start hosting server
@@ -403,8 +425,8 @@ namespace KMPServer
 			}
 			catch (Exception e)
 			{
-				stampedConsoleWriteLine("Error starting http server: " + e);
-				stampedConsoleWriteLine("Please try running the server as an administrator");
+				KMPLogger.error("Error starting http server: " + e);
+                KMPLogger.error("Please try running the server as an administrator");
 			}
 			
 			long last_backup_time = 0;

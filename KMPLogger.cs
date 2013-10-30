@@ -44,7 +44,7 @@ namespace KMP
             resetConsoleColor();
         }
 
-        private static void warning(String message)
+        public static void warning(String message)
         {
             setConsoleColor(ConsoleColor.Yellow);
             log("[WARN] " + getTimeStamp() + " ==> " + message);
