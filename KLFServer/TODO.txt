@@ -1,0 +1,7 @@
+* Refactor some of the code in to new classes.
+	* All threads should have their own classes.
+	* Abstract client list in to a new manager class.
+	* handleMessage is monolithic.
+		* Message handling should be handled by a manager class and subclasses.
+	* Database stuff. What do we do with this?
+		* Security audit on queries.
