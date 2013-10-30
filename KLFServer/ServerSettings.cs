@@ -5,37 +5,39 @@ using System.Text;
 
 using System.IO;
 using System.Net;
+using System.Reflection;
 
 namespace KMPServer
 {
 	public class ServerSettings
 	{
 		public const String SERVER_CONFIG_FILENAME = "KMPServerConfig.txt";
-		public const String PORT_LABEL = "port";
-		public const String HTTP_PORT_LABEL = "httpPort";
-		public const String MAX_CLIENTS_LABEL = "maxClients";
-		public const String JOIN_MESSAGE_LABEL = "joinMessage";
-		public const String SERVER_INFO_LABEL = "serverInfo";
-		public const String UPDATES_PER_SECOND_LABEL = "updatesPerSecond";
-		public const String SCREENSHOT_INTERVAL_LABEL = "screenshotInterval";
-		public const String SAVE_SCREENSHOTS_LABEL = "saveScreenshots";
-		public const String AUTO_RESTART_LABEL = "autoRestart";
-		public const String AUTO_HOST_LABEL = "autoHost";
-		public const String TOTAL_INACTIVE_SHIPS_LABEL = "totalInactiveShips";
-		public const String SCREENSHOT_HEIGHT_LABEL = "screenshotHeight";
 
-		public int port = 2076;
-		public int httpPort = 80;
-		public int maxClients = 8;
-		public float updatesPerSecond = 60;
-		public int screenshotInterval = 3000;
-		public bool autoRestart = false;
-		public bool autoHost = false;
-		public bool saveScreenshots = false;
-		public String joinMessage = String.Empty;
-		public String serverInfo = String.Empty;
-		public byte totalInactiveShips = 100;
-		public ScreenshotSettings screenshotSettings = new ScreenshotSettings();
+        public class ConfigStore
+        {
+            public string ipBinding = "0.0.0.0";
+            public int port = 2076;
+            public int httpPort = 8081;
+            public int maxClients = 8;
+            public float updatesPerSecond = 60;
+            public int screenshotInterval = 3000;
+            public bool autoRestart = false;
+            public bool autoHost = false;
+            public bool saveScreenshots = false;
+            public String joinMessage = String.Empty;
+            public String serverInfo = String.Empty;
+            public byte totalInactiveShips = 100;
+            public Log.LogLevels LogLevel = Log.LogLevels.Info;
+
+            private ScreenshotSettings _screenshotSettings = new ScreenshotSettings();
+            public ScreenshotSettings screenshotSettings
+            {
+                get
+                {
+                    return _screenshotSettings;
+                }
+            }
+        }
 
 		public const int MIN_UPDATE_INTERVAL = 250;
 		public const int MAX_UPDATE_INTERVAL = 500;
@@ -66,162 +68,174 @@ namespace KMPServer
 			return port >= IPEndPoint.MinPort && port <= IPEndPoint.MaxPort;
 		}
 
-		//Config
+        public static void modifySetting(ConfigStore Store, string Key, string Value)
+        {
+            try
+            {
+                FieldInfo f = Store.GetType().GetFields().Where(fF => fF.Name.ToLowerInvariant() == Key).First();
+                object newValue;
 
-		public void readConfigFile()
-		{
-			try
-			{
-				TextReader reader = File.OpenText(SERVER_CONFIG_FILENAME);
+                if (f.FieldType.IsEnum)
+                {
+                    newValue = Enum.Parse(f.FieldType, Value.ToString(), true);
+                }
+                else
+                {
+                    newValue = (f.FieldType == typeof(bool)) ? getBool(Value.ToString()) : Convert.ChangeType(Value, f.FieldType);
+                }
 
-				String line = reader.ReadLine();
+                f.SetValue(Store, newValue);
+            }
+            catch
+            {
+                throw new ArgumentException(string.Format("{0} is not a valid value for {1}", Value, Key));
+            }
+        }
 
-				while (line != null)
-				{
-					String label = line; //Store the last line read as the label
-					line = reader.ReadLine(); //Read the value from the next line
+        public static Dictionary<string, string> GetCurrentValues(ConfigStore Store)
+        {
+            var result = new Dictionary<string, string>();
 
-					if (line != null)
-					{
-						//Update the value with the given label
-						if (label == PORT_LABEL)
-						{
-							int new_port;
-							if (int.TryParse(line, out new_port) && validPort(new_port))
-								port = new_port;
-						}
-						else if (label == HTTP_PORT_LABEL)
-						{
-							int new_port;
-							if (int.TryParse(line, out new_port) && validPort(new_port))
-								httpPort = new_port;
-						}
-						else if (label == MAX_CLIENTS_LABEL)
-						{
-							int new_max;
-							if (int.TryParse(line, out new_max) && new_max > 0)
-								maxClients = new_max;
-						}
-						else if (label == JOIN_MESSAGE_LABEL)
-						{
-							joinMessage = line;
-						}
-						else if (label == SERVER_INFO_LABEL)
-						{
-							serverInfo = line;
-						}
-						else if (label == UPDATES_PER_SECOND_LABEL)
-						{
-							int new_val;
-							if (int.TryParse(line, out new_val))
-								updatesPerSecond = new_val;
-						}
-						else if (label == SCREENSHOT_INTERVAL_LABEL)
-						{
-							int new_val;
-							if (int.TryParse(line, out new_val) && validScreenshotInterval(new_val))
-								screenshotInterval = new_val;
-						}
-						else if (label == AUTO_RESTART_LABEL)
-						{
-							bool new_val;
-							if (bool.TryParse(line, out new_val))
-								autoRestart = new_val;
-						}
-						else if (label == AUTO_HOST_LABEL)
-						{
-							bool new_val;
-							if (bool.TryParse(line, out new_val))
-								autoHost = new_val;
-						}
-						else if (label == SAVE_SCREENSHOTS_LABEL)
-						{
-							bool new_val;
-							if (bool.TryParse(line, out new_val))
-								saveScreenshots = new_val;
-						}
-						else if (label == TOTAL_INACTIVE_SHIPS_LABEL)
-						{
-							byte new_val;
-							if (byte.TryParse(line, out new_val))
-								totalInactiveShips = new_val;
-						}
-						else if (label == SCREENSHOT_HEIGHT_LABEL)
-						{
-							int new_val;
-							if (int.TryParse(line, out new_val))
-								screenshotSettings.maxHeight = new_val;
-						}
+            foreach (FieldInfo f in Store.GetType().GetFields().Where(f => f.IsPublic))
+            {
+                var value = f.GetValue(Store).ToString();
+                result.Add(f.Name, value);
+            }
 
-					}
+            return result;
+        }
 
-					line = reader.ReadLine();
-				}
+        //Write the setting store out to a file by reflecting over its members.
+        public static void writeToFile(ConfigStore Store)
+        {
+            string FileName = SERVER_CONFIG_FILENAME;
 
-				reader.Close();
-			}
-			catch (FileNotFoundException)
-			{
-			}
-			catch (UnauthorizedAccessException)
-			{
-			}
+            try
+            {
+                if (File.Exists(FileName))
+                {
+                    File.SetAttributes(FileName, FileAttributes.Normal);
+                }
 
-		}
+                using (StreamWriter configWriter = new StreamWriter(FileName))
+                {
+                    foreach (FieldInfo f in Store.GetType().GetFields().Where(f => f.IsPublic))
+                    {
+                        var value = f.GetValue(Store).ToString();
+                        string data = string.Format("{0}={1}", f.Name, value);
+                        configWriter.WriteLine(data);
+                    }
+                }
+            }
+            catch (Exception ex)
+            { 
+                
+            }
+        }
 
-		public void writeConfigFile()
-		{
-			TextWriter writer = File.CreateText(SERVER_CONFIG_FILENAME);
+        public static bool getBool(string Value)
+        {
+            if (Value == "1")
+            {
+                return (true);
+            }
+            else if (Value == "0")
+            {
+                return (false);
+            }
+            else
+            {
+                try
+                {
+                    return (Convert.ToBoolean(Value));
+                }
+                catch
+                {
+                    return (false);
+                }
+            }
+        }
 
-			//port
-			writer.WriteLine(PORT_LABEL);
-			writer.WriteLine(port);
+        public static void SetFieldValue(Dictionary<string, string> ConfigStore, object e, FieldInfo fV, string node)
+        {
+            object NArg;
+            Type TestType = fV.FieldType;
 
-			//port
-			writer.WriteLine(HTTP_PORT_LABEL);
-			writer.WriteLine(httpPort);
+            try
+            {
+                if (TestType.BaseType == typeof(Enum))
+                {
+                    if (String.IsNullOrEmpty(ConfigStore[node])) { return; }
 
-			//max clients
-			writer.WriteLine(MAX_CLIENTS_LABEL);
-			writer.WriteLine(maxClients);
+                    NArg = Enum.Parse(TestType, ConfigStore[node], true);
+                }
 
-			//join message
-			writer.WriteLine(JOIN_MESSAGE_LABEL);
-			writer.WriteLine(joinMessage);
+                else if (TestType == typeof(bool))
+                {
+                    NArg = getBool(ConfigStore[node]);
+                }
+                else
+                {
+                    NArg = Convert.ChangeType(ConfigStore[node], TestType);
+                }
 
-			//server info
-			writer.WriteLine(SERVER_INFO_LABEL);
-			writer.WriteLine(serverInfo);
+                fV.SetValue(e, NArg);
+            }
+            catch
+            {
+                //Failed to set field value, ignore.
+            }
+        }
 
-			//update interval
-			writer.WriteLine(UPDATES_PER_SECOND_LABEL);
-			writer.WriteLine(updatesPerSecond);
+        public static void readFromFile(ConfigStore Store)
+        {
+            string FileName = SERVER_CONFIG_FILENAME;
 
-			//screenshot interval
-			writer.WriteLine(SCREENSHOT_INTERVAL_LABEL);
-			writer.WriteLine(screenshotInterval);
+            Dictionary<string, string> ConfigStore = new Dictionary<string, string>();
 
-			//auto-restart
-			writer.WriteLine(AUTO_RESTART_LABEL);
-			writer.WriteLine(autoRestart);
+            //Read the settings file into a dictionary before shoving the values in the setting store.
+            try
+            {
+                using (StreamReader configReader = new StreamReader(FileName))
+                {
+                    string CurrentLine;
+                    string[] LineParts;
 
-			//auto-host
-			writer.WriteLine(AUTO_HOST_LABEL);
-			writer.WriteLine(autoHost);
+                    while (configReader.EndOfStream == false)
+                    {
+                        CurrentLine = configReader.ReadLine();
 
-			//upnp
-			writer.WriteLine(TOTAL_INACTIVE_SHIPS_LABEL);
-			writer.WriteLine(totalInactiveShips);
+                        if (CurrentLine.StartsWith("#") || String.IsNullOrEmpty(CurrentLine)) { continue; }
 
-			//save screenshots
-			writer.WriteLine(SAVE_SCREENSHOTS_LABEL);
-			writer.WriteLine(saveScreenshots);
+                        LineParts = CurrentLine.Split(new char[] { '=' }, 2);
+                        if (LineParts.Length < 2) { continue; }
 
-			//screenshot height
-			writer.WriteLine(SCREENSHOT_HEIGHT_LABEL);
-			writer.WriteLine(screenshotSettings.maxHeight);
+                        LineParts[0] = LineParts[0].ToLowerInvariant();
 
-			writer.Close();
-		}
+                        ConfigStore.Add(LineParts[0].Trim(), LineParts[1].Trim());
+                    }
+
+                    configReader.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                
+            }
+
+            foreach (FieldInfo f in Store.GetType().GetFields())
+            {
+                string node = f.Name.ToLowerInvariant();
+
+                if (ConfigStore.ContainsKey(node))
+                {
+                    SetFieldValue(ConfigStore, Store, f, node);
+                }
+                else
+                {
+                    //Missing a node, no matter - default value will remain.
+                }
+            }
+        }
 	}
 }

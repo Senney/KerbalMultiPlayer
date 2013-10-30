@@ -6,8 +6,6 @@ using System.Text;
 using System.Net;
 using System.IO;
 
-using KMP;
-
 namespace KMPServer
 {
 	class ServerMain
@@ -17,281 +15,121 @@ namespace KMPServer
 
 		static void Main(string[] args)
 		{
+            ServerSettings.ConfigStore settings = new ServerSettings.ConfigStore();
+            ServerSettings.readFromFile(settings);
+
+            bool settingsChanged = false;
+
+            if (args != null && args.Length > 0)
+            {
+                for (int i = 0; i < args.Length - 1; i++)
+                {
+                    if (args[i].StartsWith("+"))
+                    {
+                        var key = args[i].Substring(1);
+                        var val = args[i++];
+                        try
+                        {
+                            ServerSettings.modifySetting(settings, key, val);
+                            settingsChanged = true;
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            if (settingsChanged) { ServerSettings.writeToFile(settings); }
+
+            Log.MinLogLevel = settings.LogLevel;
 
 			Console.Title = "KMP Server " + KMPCommon.PROGRAM_VERSION;
-            KMPLogger.info("KMP Server Version: " + KMPCommon.PROGRAM_VERSION);
-            KMPLogger.info("    Created by Shaun Esau.");
-            KMPLogger.error("   Modified by Sean Heintz (sean.heintz@gmail.com)");
-            KMPLogger.info("    Based on Kerbal LiveFeed created by Alfred Lam\n");
+            Log.Info("KMP Server version " + KMPCommon.PROGRAM_VERSION);
+            Log.Info("    Created by Shaun Esau");
+            Log.Info("    Based on Kerbal LiveFeed created by Alfred Lam");
+            Log.Info("");
 
-			ServerSettings settings = new ServerSettings();
-			settings.readConfigFile();
-			bool firstLoop = true;
+            if (settings.autoHost)
+            {
+                startServer(settings);
+                return;
+            }
 
-			while (true)
-			{
-				Console.WriteLine();
+            Log.Info("Current Configuration:");
+            Log.Info("");
 
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Port: ");
+            foreach (var kvp in ServerSettings.GetCurrentValues(settings))
+            {
+                var tabs = (kvp.Key.Length > 12) ? "\t" : "\t\t";
+                Log.Info("{0}{2}: {1}", kvp.Key, kvp.Value, tabs);
+            }
 
-				Console.ResetColor();
-				Console.WriteLine(settings.port);
+            Log.Info("");
+            Log.Info("Enter /set [key] [value] to modify a setting.");
+            Log.Info("/quit to exit, or /start to begin the server.");
+            Log.Info("");
 
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("HTTP Port: ");
+            bool running = true;
 
-				Console.ResetColor();
-				Console.WriteLine(settings.httpPort);
+            while (running)
+            {
+                var line = Console.ReadLine();
 
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Max Clients: ");
+                var parts = line.Split(' ');
 
-				Console.ResetColor();
-				Console.WriteLine(settings.maxClients);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Join Message: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.joinMessage);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Server Info: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.serverInfo);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Updates Per Second: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.updatesPerSecond);
-
-//				Console.ForegroundColor = ConsoleColor.Green;
-//				Console.Write("Total Inactive Ships: ");
-//
-//				Console.ResetColor();
-//				Console.WriteLine(settings.totalInactiveShips);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Screenshot Height: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.screenshotSettings.maxHeight);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Screenshot Interval: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.screenshotInterval + "ms");
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Save Screenshots: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.saveScreenshots);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Auto-Restart: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.autoRestart);
-
-				Console.ForegroundColor = ConsoleColor.Green;
-				Console.Write("Auto-Host: ");
-
-				Console.ResetColor();
-				Console.WriteLine(settings.autoHost);
-
-				Console.ResetColor();
-				Console.WriteLine();
-				Console.WriteLine("P: change port, HP: change http port, M: change max clients");
-				Console.WriteLine("J: join message, IF: server info, U: updates per second");//, IS: total inactive ships");
-				Console.WriteLine("SH: screenshot height, SI: screenshot interval, SV: save screenshots");
-				Console.WriteLine("AR: toggle auto-restart, AH: toggle auto-host");
-				Console.WriteLine("H: begin hosting, Q: quit");
-
-				String in_string;
-				if (settings.autoHost && firstLoop)
-				{
-					in_string = "h";
-				}
-				else
-				{
-					in_string = Console.ReadLine().ToLower();
-				}
-				firstLoop = false;
-
-				if (in_string == "q")
-				{
-					break;
-				}
-				else if (in_string == "p")
-				{
-					Console.Write("Enter the Port: ");
-
-					int new_port;
-					if (int.TryParse(Console.ReadLine(), out new_port) && ServerSettings.validPort(new_port))
-					{
-						settings.port = new_port;
-						settings.writeConfigFile();
-					}
-					else
-					{
-                        KMPLogger.error("Invalid port [" +
-                            IPEndPoint.MinPort + "-" +
-                            IPEndPoint.MaxPort + "]");
-					}
-				}
-				else if (in_string == "hp")
-				{
-					Console.Write("Enter the HTTP Port: ");
-
-					int new_port;
-					if (int.TryParse(Console.ReadLine(), out new_port) && ServerSettings.validPort(new_port))
-					{
-						settings.httpPort = new_port;
-						settings.writeConfigFile();
-					}
-					else
-                    {
-                        KMPLogger.error("Invalid port [" +
-                            IPEndPoint.MinPort + "-" +
-                            IPEndPoint.MaxPort + "]");
-					}
-				}
-				else if (in_string == "m")
-				{
-					Console.Write("Enter the max number of clients: ");
-
-					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && new_value > 0)
-					{
-						settings.maxClients = new_value;
-						settings.writeConfigFile();
-					}
-					else
-						Console.WriteLine("Invalid number of clients");
-				}
-				else if (in_string == "j")
-				{
-					Console.Write("Enter the join message: ");
-					settings.joinMessage = Console.ReadLine();
-					settings.writeConfigFile();
-				}
-				else if (in_string == "if")
-				{
-					Console.Write("Enter the server info message: ");
-					settings.serverInfo = Console.ReadLine();
-					settings.writeConfigFile();
-				}
-				else if (in_string == "u")
-				{
-					Console.Write("Enter the number of updates to receive per second: ");
-					float new_value;
-					if (float.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validUpdatesPerSecond(new_value))
-					{
-						settings.updatesPerSecond = new_value;
-						settings.writeConfigFile();
-					}
-					else
-					{
-						Console.WriteLine("Invalid updates per second ["
-							+ ServerSettings.MIN_UPDATES_PER_SECOND + '-'
-							+ ServerSettings.MAX_UPDATES_PER_SECOND + ']');
-					}
-				}
-				else if (in_string == "sh")
-				{
-					Console.Write("Enter the screenshot height: ");
-					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value))
-					{
-						settings.screenshotSettings.maxHeight = new_value;
-						settings.writeConfigFile();
-					}
-					else
-					{
-						Console.WriteLine("Invalid screenshot height.");
-					}
-				}
-				else if (in_string == "si")
-				{
-					Console.Write("Enter the screenshot interval: ");
-					int new_value;
-					if (int.TryParse(Console.ReadLine(), out new_value) && ServerSettings.validScreenshotInterval(new_value))
-					{
-						settings.screenshotInterval = new_value;
-						settings.writeConfigFile();
-					}
-					else
-					{
-						Console.WriteLine("Invalid screenshot interval ["
-							+ ServerSettings.MIN_SCREENSHOT_INTERVAL + '-'
-							+ ServerSettings.MAX_SCREENSHOT_INTERVAL + ']');
-					}
-				}
-//				else if (in_string == "is")
-//				{
-//					Console.Write("Enter the total number of inactive ships: ");
-//					byte new_value;
-//					if (byte.TryParse(Console.ReadLine(), out new_value))
-//					{
-//						settings.totalInactiveShips = new_value;
-//						settings.writeConfigFile();
-//					}
-//					else
-//					{
-//						Console.WriteLine("Invalid total inactive ships ["
-//							+ Byte.MinValue + '-'
-//							+ Byte.MaxValue + ']');
-//					}
-//				}
-				else if (in_string == "sv")
-				{
-					settings.saveScreenshots = !settings.saveScreenshots;
-					settings.writeConfigFile();
-				}
-				else if (in_string == "ar")
-				{
-					settings.autoRestart = !settings.autoRestart;
-					settings.writeConfigFile();
-				}
-				else if (in_string == "ah")
-				{
-					settings.autoHost = !settings.autoHost;
-					settings.writeConfigFile();
-				}
-				else if (in_string == "h")
-				{
-					ServerStatus status = hostServer(settings);
-					while (status == ServerStatus.RESTARTING)
-					{
-						System.Threading.Thread.Sleep(AUTO_RESTART_DELAY);
-						status = hostServer(settings);
-					}
-					
-					if (status == ServerStatus.QUIT)
-					{
-						Console.WriteLine("Press any key to quit");
-						Console.ReadKey();
-	
-						break;
-					}
-					else
-					{
-						Console.WriteLine("Server "+Enum.GetName(typeof(ServerStatus), status).ToLower());
-					}
-				}
-
-			}
-
+                switch (parts[0].ToLowerInvariant())
+                {
+                    case "/quit":
+                        return;
+                    case "/set":
+                        if (parts.Length != 3)
+                        {
+                            Log.Info("Invalid usage. Usage is /set [key] [value]");
+                        }
+                        else 
+                        {
+                            try
+                            {
+                                ServerSettings.modifySetting(settings, parts[1], parts[2]);
+                                Log.Info("{0} changed to {1}", parts[1], parts[2]);
+                                ServerSettings.writeToFile(settings);
+                            }
+                            catch
+                            {
+                                Log.Info("{0} cannot be set to {1}", parts[1], parts[2]);
+                            }
+                        }
+                        break;
+                    case "/start":
+                        startServer(settings);
+                        break;
+                    default:
+                        Log.Info("Unrecognised command: {0}", parts[0]);
+                        break;
+                }
+            }
 		}
 
-		static ServerStatus hostServer(ServerSettings settings)
-		{
+        private static void startServer(ServerSettings.ConfigStore settings)
+        {
+            ServerStatus status = hostServer(settings);
+            while (status == ServerStatus.RESTARTING)
+            {
+                System.Threading.Thread.Sleep(AUTO_RESTART_DELAY);
+                status = hostServer(settings);
+            }
+             
+            if (status == ServerStatus.QUIT)
+            {
 
+            }
+            else
+            {
+                Console.WriteLine("Server " + Enum.GetName(typeof(ServerStatus), status).ToLower());
+            }
+        }
+
+		static ServerStatus hostServer(ServerSettings.ConfigStore settings)
+		{
 			Server server = new Server(settings);
 
 			try
@@ -300,14 +138,13 @@ namespace KMPServer
 			}
 			catch (Exception e)
 			{
-                KMPLogger.fatal("Unexpected exception encountered! Crash report written to kmplog.txt");
-                KMPLogger.fatal(e.ToString());
-
+				Log.Error("Unexpected exception encountered! Crash report written to log file");
+				Log.Error(e.ToString());
 				if (server.threadExceptionStackTrace != null && server.threadExceptionStackTrace.Length > 0)
 				{
-                    KMPLogger.error("Stacktrace: \n" + server.threadExceptionStackTrace);
+					Log.Error("Stacktrace: ");
+					Log.Error(server.threadExceptionStackTrace);
 				}
-
 				//server.clearState();
 				//return ServerStatus.CRASHED;
 			}
