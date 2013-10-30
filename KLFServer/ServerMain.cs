@@ -139,9 +139,9 @@ namespace KMPServer
 					}
 					else
 					{
-						Console.WriteLine("Invalid port ["
-							+ IPEndPoint.MinPort + '-'
-							+ IPEndPoint.MaxPort + ']');
+                        KMPLogger.error("Invalid port [" +
+                            IPEndPoint.MinPort + "-" +
+                            IPEndPoint.MaxPort + "]");
 					}
 				}
 				else if (in_string == "hp")
@@ -155,10 +155,10 @@ namespace KMPServer
 						settings.writeConfigFile();
 					}
 					else
-					{
-						Console.WriteLine("Invalid port ["
-							+ IPEndPoint.MinPort + '-'
-							+ IPEndPoint.MaxPort + ']');
+                    {
+                        KMPLogger.error("Invalid port [" +
+                            IPEndPoint.MinPort + "-" +
+                            IPEndPoint.MaxPort + "]");
 					}
 				}
 				else if (in_string == "m")
@@ -300,31 +300,14 @@ namespace KMPServer
 			}
 			catch (Exception e)
 			{
-				//Write an error log
-				TextWriter writer = File.CreateText("KMPServerlog.txt");
+                KMPLogger.fatal("Unexpected exception encountered! Crash report written to kmplog.txt");
+                KMPLogger.fatal(e.ToString());
 
-				writer.WriteLine(e.ToString());
 				if (server.threadExceptionStackTrace != null && server.threadExceptionStackTrace.Length > 0)
 				{
-					writer.Write("Stacktrace: ");
-					writer.WriteLine(server.threadExceptionStackTrace);
+                    KMPLogger.error("Stacktrace: \n" + server.threadExceptionStackTrace);
 				}
 
-				writer.Close();
-
-				Console.WriteLine();
-
-				Console.ForegroundColor = ConsoleColor.Red;
-				Server.stampedConsoleWriteLine("Unexpected exception encountered! Crash report written to KMPServerlog.txt");
-				Console.WriteLine(e.ToString());
-				if (server.threadExceptionStackTrace != null && server.threadExceptionStackTrace.Length > 0)
-				{
-					Console.Write("Stacktrace: ");
-					Console.WriteLine(server.threadExceptionStackTrace);
-				}
-
-				Console.WriteLine();
-				Console.ResetColor();
 				//server.clearState();
 				//return ServerStatus.CRASHED;
 			}

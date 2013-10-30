@@ -8,6 +8,7 @@ namespace KMP
     public class KMPLogger
     {
         private static String logName = "kmplog.txt";
+        private static readonly String EOL = "\r\n";
 
         public static readonly int KMP_LOG_FILE = 0x01;
         public static readonly int KMP_LOG_CONSOLE = 0x10;
@@ -74,8 +75,9 @@ namespace KMP
             {
                 if (outFile == null)
                     outFile = File.Open(logName, FileMode.Append);
-                Byte[] bytes = getByteArray(message);
+                Byte[] bytes = getByteArray(message + EOL);
                 outFile.Write(bytes, 0, bytes.Length);
+                outFile.Flush();
             }
         }
 
