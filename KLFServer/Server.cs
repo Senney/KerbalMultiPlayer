@@ -446,14 +446,16 @@ namespace KMPServer
 				
 				if (currentMillisecond - last_backup_time > DATABASE_BACKUP_INTERVAL && (numInGameClients > 0 || !backedUpSinceEmpty))
 				{
+                    KMPLogger.info("Starting scheduled backup.");
 					if (numInGameClients <= 0)
 					{
 						backedUpSinceEmpty = true;
 						cleanDatabase();
 					}
-					
+                    
 					last_backup_time = currentMillisecond;
 					backupDatabase();
+                    KMPLogger.info("Scheduled backup complete.");
 				}
 				
 				Thread.Sleep(SLEEP_TIME);
@@ -662,10 +664,9 @@ namespace KMPServer
 
 		private void listenForClients()
 		{
-
+            KMPLogger.info("Starting client connection thread.");
 			try
 			{
-				stampedConsoleWriteLine("Listening for clients...");
 				tcpListener.Start(4);
 
 				while (true)
@@ -679,6 +680,7 @@ namespace KMPServer
 						if (tcpListener.Pending())
 						{
 							client = tcpListener.AcceptTcpClient(); //Accept a TCP client
+                            KMPLogger.info("New client connected: " + client.Client.RemoteEndPoint.ToString());
 						}
 					}
 					catch (System.Net.Sockets.SocketException e)
@@ -698,7 +700,7 @@ namespace KMPServer
 							if (clientIsValid(client_index))
 							{
 								//Send a handshake to the client
-								stampedConsoleWriteLine("Accepted client. Handshaking...");
+                                KMPLogger.info("Accepted client. Handshaking...");
 								sendHandshakeMessage(client_index);
 
 								sendMessageHeaderDirect(client, KMPCommon.ServerMessageID.NULL, 0);
@@ -714,7 +716,7 @@ namespace KMPServer
 						else
 						{
 							//Client array is full
-							stampedConsoleWriteLine("Client attempted to connect, but server is full.");
+							KMPLogger.error("Client attempted to connect, but server is full.");
 							sendHandshakeRefusalMessageDirect(client, "Server is currently full");
 							client.Close();
 						}
@@ -729,8 +731,8 @@ namespace KMPServer
 					if (client == null && error_message.Length > 0)
 					{
 						//There was an error accepting the client
-						stampedConsoleWriteLine("Error accepting client: ");
-						stampedConsoleWriteLine(error_message);
+						KMPLogger.error("Error accepting client: ");
+                        KMPLogger.error(error_message);
 					}
 
 					Thread.Sleep(SLEEP_TIME);
