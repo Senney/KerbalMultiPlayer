@@ -5,3 +5,5 @@
 		* Message handling should be handled by a manager class and subclasses.
 	* Database stuff. What do we do with this?
 		* Security audit on queries.
+
+Currently the Server class is a single monolithic 2600+ line codeblock. This needs to be changed.
