@@ -20,9 +20,9 @@ namespace KMPServer
 
 			Console.Title = "KMP Server " + KMPCommon.PROGRAM_VERSION;
             KMPLogger.info("KMP Server Version: " + KMPCommon.PROGRAM_VERSION);
-            KMPLogger.info("    Created by Shaun Esau. Modified by Sean Heintz (sean.heintz@gmail.com)");
-			Console.WriteLine("    Based on Kerbal LiveFeed created by Alfred Lam");
-            Console.WriteLine();
+            KMPLogger.info("    Created by Shaun Esau.");
+            KMPLogger.error("   Modified by Sean Heintz (sean.heintz@gmail.com)");
+            KMPLogger.info("    Based on Kerbal LiveFeed created by Alfred Lam\n");
 
 			ServerSettings settings = new ServerSettings();
 			settings.readConfigFile();
