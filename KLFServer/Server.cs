@@ -101,6 +101,8 @@ namespace KMPServer
 		
 		private bool backedUpSinceEmpty = false;
 		private Dictionary<Guid,long> recentlyDestroyed = new Dictionary<Guid,long>();
+
+        private ScreenshotManager screenshotManager;
 	
 		public long currentMillisecond
 		{
@@ -166,6 +168,7 @@ namespace KMPServer
 		public Server(ServerSettings.ConfigStore settings)
 		{
 			this.settings = settings;
+            this.screenshotManager = new ScreenshotManager(settings.screenshotSettings);
 		}
 
 		public void clearState()
@@ -1334,20 +1337,19 @@ namespace KMPServer
 					break;
 
 				case KMPCommon.ClientMessageID.SCREENSHOT_SHARE:
-
-                    ScreenshotManager screen_manager = new ScreenshotManager(settings.screenshotSettings.maxNumBytes);
-                    if (!screen_manager.setScreenshot(cl, data))
+                    if (!this.screenshotManager.setScreenshot(cl, data))
                     {
                         Log.Error("Unable to set a new screenshot for player " + cl.username);
                         break;
                     }
+                    Log.Info(cl.username + " uploaded a screenshot.");
                     
-					StringBuilder sb = new StringBuilder();
-					sb.Append(cl.username);
-					sb.Append(" has shared a screenshot.");
-                    sendTextMessageToAll(sb.ToString());
+					StringBuilder builder = new StringBuilder();
+					builder.Append(cl.username);
+					builder.Append(" has shared a screenshot.");
+                    sendTextMessageToAll(builder.ToString());
 
-                    sendScreenshotToWatchers(cl, screen_manager.getScreenshot(cl));
+                    sendScreenshotToWatchers(cl, this.screenshotManager.getScreenshot(cl));
                     if (settings.saveScreenshots)
                         saveScreenshot(data, cl.username);
 
