@@ -89,7 +89,7 @@ namespace KMPServer
 
         public byte[] getScreenshot(String clientName)
         {
-            if (clientName == null || m_clientScreenshots.ContainsKey(clientName))
+            if (clientName == null || !m_clientScreenshots.ContainsKey(clientName))
                 return null;
 
             Screenshot ss = m_clientScreenshots[clientName];
