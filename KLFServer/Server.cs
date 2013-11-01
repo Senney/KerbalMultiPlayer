@@ -1335,27 +1335,21 @@ namespace KMPServer
 
 				case KMPCommon.ClientMessageID.SCREENSHOT_SHARE:
 
-					if (data != null && data.Length <= settings.screenshotSettings.maxNumBytes && cl.isReady)
-					{
-						//Set the screenshot for the player
-						lock (cl.screenshotLock)
-						{
-							cl.screenshot = data;
-						}
+                    ScreenshotManager screen_manager = new ScreenshotManager(settings.screenshotSettings.maxNumBytes);
+                    if (!screen_manager.setScreenshot(cl, data))
+                    {
+                        Log.Error("Unable to set a new screenshot for player " + cl.username);
+                        break;
+                    }
+                    
+					StringBuilder sb = new StringBuilder();
+					sb.Append(cl.username);
+					sb.Append(" has shared a screenshot.");
+                    sendTextMessageToAll(sb.ToString());
 
-						StringBuilder sb = new StringBuilder();
-						sb.Append(cl.username);
-						sb.Append(" has shared a screenshot.");
-
-						sendTextMessageToAll(sb.ToString());
-						Log.Info(sb.ToString());
-
-						//Send the screenshot to every client watching the player
-						sendScreenshotToWatchers(cl, data);
-
-						if (settings.saveScreenshots)
-							saveScreenshot(data, cl.username);
-					}
+                    sendScreenshotToWatchers(cl, screen_manager.getScreenshot(cl));
+                    if (settings.saveScreenshots)
+                        saveScreenshot(data, cl.username);
 
 					break;
 
