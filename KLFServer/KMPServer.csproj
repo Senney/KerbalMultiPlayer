@@ -114,6 +114,8 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="sqlite3.dll" />
+    <Content Include="sqlite3.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>
