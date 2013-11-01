@@ -18,7 +18,7 @@ using System.IO;
  *  1) saveScreenshot
  *  2) sendScreenshotToWatchers
  *  3) 
- *  4) SCREEN_WATCH_PLAYER
+ *  4) SCREEN_WATCH_PLAYER?
  *  
  * Seems to (so far) have an inherant dependency on some form of UserManager. Look
  * in to implementing this.
@@ -50,9 +50,18 @@ namespace KMPServer
             this.m_clientScreenshots = new Dictionary<String, Screenshot>();
         }
 
-        public bool addClientWatch(ServerClient watcher, ServerClient client)
+        public bool setClientWatch(ServerClient watcher, String target)
         {
-            return true;
+            lock (watcher.watchPlayerNameLock)
+            {
+                if (target != watcher.watchPlayerName)
+                {
+                    //Set the watch player name
+                    watcher.watchPlayerName = target;
+                    return true;
+                }
+            }
+            return false;
         }
 
         public bool setScreenshot(ServerClient client, byte[] screenshot)
