@@ -1303,17 +1303,7 @@ namespace KMPServer
 					if (data != null)
 						watch_name = encoder.GetString(data);
 
-					bool watch_name_changed = false;
-
-					lock (cl.watchPlayerNameLock)
-					{
-						if (watch_name != cl.watchPlayerName)
-						{
-							//Set the watch player name
-							cl.watchPlayerName = watch_name;
-							watch_name_changed = true;
-						}
-					}
+                    bool watch_name_changed = this.screenshotManager.setClientWatch(cl, watch_name);
 
 					if (watch_name_changed && watch_name.Length > 0
 						&& watch_name != cl.username)
@@ -1322,11 +1312,7 @@ namespace KMPServer
 						ServerClient watch_client = getClientByName(watch_name);
 						if (watch_client.isReady)
 						{
-							byte[] screenshot = null;
-							lock (watch_client.screenshotLock)
-							{
-								screenshot = watch_client.screenshot;
-							}
+                            byte[] screenshot = this.screenshotManager.getScreenshot(watch_client);
 
 							if (screenshot != null)
 								sendScreenshot(cl, watch_client.screenshot);
