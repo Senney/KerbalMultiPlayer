@@ -73,4 +73,3 @@
   <ItemGroup>
     <None Include="KMPServer.exe.config" />
   </ItemGroup>
-</Project>

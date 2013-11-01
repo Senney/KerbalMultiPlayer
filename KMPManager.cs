@@ -182,7 +182,7 @@ namespace KMP
 		{
 			get
 			{
-				return FlightGlobals.ready && FlightGlobals.ActiveVessel != null && KMPClientMain.handshakeCompleted && KMPClientMain.udpConnected && KMPClientMain.receivedSettings;
+				return FlightGlobals.ready && FlightGlobals.ActiveVessel != null && KMPClientMain.handshakeCompleted && KMPClientMain.receivedSettings;
 			}
 		}
 
@@ -2036,15 +2036,21 @@ namespace KMP
 					}
 				}
 				
+				if (!((update != null && update.bodyName != "Kerbin") || protovessel.altitude > 35000d || kscPosition == Vector3d.zero || Vector3d.Distance(kscPosition,protovessel.position) > 40000d)) //refuse to load anything too close to the KSC
+				{
+					KMPClientMain.DebugLog("Tried to load vessel to close to KSC");
+					return;
+				}
+				
 				IEnumerator<ProtoCrewMember> crewEnum = HighLogic.CurrentGame.CrewRoster.GetEnumerator();
 				int applicants = 0;
 				while (crewEnum.MoveNext())
 					if (crewEnum.Current.rosterStatus == ProtoCrewMember.RosterStatus.AVAILABLE) applicants++;
 				
-				if (protovessel.GetVesselCrew().Count > applicants)
+				if (protovessel.GetVesselCrew().Count * 5 > applicants)
 				{
 					KMPClientMain.DebugLog("Adding crew applicants");
-					for (int i = 0; i < (protovessel.GetVesselCrew().Count * 2);)
+					for (int i = 0; i < (protovessel.GetVesselCrew().Count * 5);)
 					{
 						ProtoCrewMember protoCrew = CrewGenerator.RandomCrewMemberPrototype();
 						if (!HighLogic.CurrentGame.CrewRoster.ExistsInRoster(protoCrew.name))
