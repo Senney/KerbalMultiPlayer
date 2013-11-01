@@ -1351,7 +1351,7 @@ namespace KMPServer
 
                     sendScreenshotToWatchers(cl, this.screenshotManager.getScreenshot(cl));
                     if (settings.saveScreenshots)
-                        saveScreenshot(data, cl.username);
+                        this.screenshotManager.saveScreenshot(cl);
 
 					break;
 
@@ -2303,6 +2303,8 @@ namespace KMPServer
 		
 		private void sendScreenshotToWatchers(ServerClient cl, byte[] bytes)
 		{
+            // TODO: Refactor this in to ScreenshotManager or a similar interface.
+
 			//Create a list of valid watchers
 			List<int> watcher_indices = new List<int>();
 
