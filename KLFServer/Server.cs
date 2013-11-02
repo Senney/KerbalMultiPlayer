@@ -23,6 +23,7 @@ using System.Data.Common;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text.RegularExpressions;
 using System.Globalization;
+using System.Collections.Concurrent;
 
 namespace KMPServer
 {
@@ -31,7 +32,7 @@ namespace KMPServer
 
 		public struct ClientMessage
 		{
-			public int clientIndex;
+			public ServerClient client;
 			public KMPCommon.ClientMessageID id;
 			public byte[] data;
 		}
@@ -51,24 +52,6 @@ namespace KMPServer
 		public const string DB_FILE = "KMP_universe.db";
 		
 		public const int UNIVERSE_VERSION = 1;
-
-		public int numClients
-		{
-			private set;
-			get;
-		}
-
-		public int numInGameClients
-		{
-			private set;
-			get;
-		}
-
-		public int numInFlightClients
-		{
-			private set;
-			get;
-		}
 		
 		public bool quit = false;
 		public bool stop = false;
@@ -90,8 +73,9 @@ namespace KMPServer
 
 		public HttpListener httpListener;
 
-		public ServerClient[] clients;
-		public Queue<ClientMessage> clientMessageQueue;
+		public SynchronizedCollection<ServerClient> clients;
+		public SynchronizedCollection<ServerClient> flight_clients;
+		public ConcurrentQueue<ClientMessage> clientMessageQueue;
 
 		public ServerSettings.ConfigStore settings;
 
@@ -121,7 +105,7 @@ namespace KMPServer
 				lock (clientActivityCountLock)
 				{
 					//Create a weighted count of clients in-flight and not in-flight to estimate the amount of update traffic
-					relevant_player_count = numInFlightClients + (numInGameClients - numInFlightClients) * NOT_IN_FLIGHT_UPDATE_WEIGHT;
+					relevant_player_count = flight_clients.Count + (clients.Count - flight_clients.Count) * NOT_IN_FLIGHT_UPDATE_WEIGHT;
 				}
 
 				if (relevant_player_count <= 0)
@@ -149,7 +133,7 @@ namespace KMPServer
 
 				lock (clientActivityCountLock)
 				{
-					relevant_player_count = numInFlightClients;
+					relevant_player_count = flight_clients.Count;
 				}
 
 				if (relevant_player_count <= 0)
@@ -180,11 +164,11 @@ namespace KMPServer
 
 			if (clients != null)
 			{
-				for (int i = 0; i < clients.Length; i++)
+				foreach (ServerClient client in clients)
 				{
-					clients[i].endReceivingMessages();
-					if (clients[i].tcpClient != null)
-						clients[i].tcpClient.Close();
+					client.endReceivingMessages();
+					if (client.tcpClient != null)
+						client.tcpClient.Close();
 				}
 			}
 
@@ -315,17 +299,10 @@ namespace KMPServer
 
 			Log.Info("Hosting server on port " + settings.port + "...");
 
-			clients = new ServerClient[settings.maxClients];
-			for (int i = 0; i < clients.Length; i++)
-			{
-				clients[i] = new ServerClient(this, i);
-			}
+			clients = new SynchronizedCollection<ServerClient>(settings.maxClients);
+			flight_clients = new SynchronizedCollection<ServerClient>(settings.maxClients);
 
-			clientMessageQueue = new Queue<ClientMessage>();
-
-			numClients = 0;
-			numInGameClients = 0;
-			numInFlightClients = 0;
+			clientMessageQueue = new ConcurrentQueue<ClientMessage>();
 
 			listenThread = new Thread(new ThreadStart(listenForClients));
 			commandThread = new Thread(new ThreadStart(handleCommands));
@@ -394,9 +371,9 @@ namespace KMPServer
 					}
 				}
 				
-				if (currentMillisecond - last_backup_time > DATABASE_BACKUP_INTERVAL && (numInGameClients > 0 || !backedUpSinceEmpty))
+				if (currentMillisecond - last_backup_time > DATABASE_BACKUP_INTERVAL && (clients.Count > 0 || !backedUpSinceEmpty))
 				{
-					if (numInGameClients <= 0)
+					if (clients.Count <= 0)
 					{
 						backedUpSinceEmpty = true;
 						cleanDatabase();
@@ -441,6 +418,7 @@ namespace KMPServer
                                 {
                                     disconnectClient(c, "Server is shutting down");
                                 }
+								//No need to clean them all up, we're shutting down anyway
 								
 								break;
 							}
@@ -453,6 +431,7 @@ namespace KMPServer
                                 if (clientToDisconnect != null)
                                 {
                                     disconnectClient(clientToDisconnect, "You were kicked from the server.");
+									postDisconnectCleanup(clientToDisconnect);
                                 }
 							}
 							else if (input == "/list")
@@ -472,12 +451,10 @@ namespace KMPServer
 							}
 							else if (input == "/count")
 							{
-                                Log.Info("Total clients: " + numClients);
-
 								lock (clientActivityCountLock)
 								{
-                                    Log.Info("In-Game Clients: " + numInGameClients);
-                                    Log.Info("In-Flight Clients: " + numInFlightClients);
+                                    Log.Info("In-Game Clients: " + clients.Count);
+                                    Log.Info("In-Flight Clients: " + flight_clients.Count);
 								}
 							}
 							else if (input == "/save")
@@ -496,6 +473,7 @@ namespace KMPServer
                                 if (userToBan != null)
                                 {
                                     disconnectClient(userToBan, "You were banned from the server!");
+									postDisconnectCleanup(userToBan);
                                     guid = userToBan.guid;
                                 }
 
@@ -525,17 +503,15 @@ namespace KMPServer
 										Guid parser = new Guid(args[1]);
 										String guid = parser.ToString();
 										String username_lower = args[0].ToLower();
-										for (int i = 0; i < clients.Length; i++)
-										{
-											SQLiteCommand cmd = universeDB.CreateCommand();
-											string sql = "DELETE FROM kmpPlayer WHERE Name LIKE '@username';" + 
-												" INSERT INTO kmpPlayer (Name, Guid) VALUES ('@username','@guid');";
-                                            cmd.Parameters.AddWithValue("username", username_lower);
-                                            cmd.Parameters.AddWithValue("guid", guid);
-											cmd.CommandText = sql;
-											cmd.ExecuteNonQuery();
-											cmd.Dispose();
-										}
+
+										SQLiteCommand cmd = universeDB.CreateCommand();
+										string sql = "DELETE FROM kmpPlayer WHERE Name LIKE '@username';" + 
+											" INSERT INTO kmpPlayer (Name, Guid) VALUES ('@username','@guid');";
+                                        cmd.Parameters.AddWithValue("username", username_lower);
+                                        cmd.Parameters.AddWithValue("guid", guid);
+										cmd.CommandText = sql;
+										cmd.ExecuteNonQuery();
+										cmd.Dispose();
                                         Log.Info("Player '" + args[0] + "' added to player roster with token '" + args[1] + "'.");
 									}
 									catch (FormatException)
@@ -573,16 +549,13 @@ namespace KMPServer
 										Guid parser = new Guid(args[1]);
 										String guid = parser.ToString();
 										String username_lower = args[0].ToLower();
-										for (int i = 0; i < clients.Length; i++)
-										{
-											SQLiteCommand cmd = universeDB.CreateCommand();
-											string sql = "UPDATE kmpPlayer SET Name='@username', Guid='@guid' WHERE Name LIKE '@username' OR Guid = '@guid';";
-											cmd.CommandText = sql;
-                                            cmd.Parameters.AddWithValue("username", username_lower);
-                                            cmd.Parameters.AddWithValue("guid", guid);
-											cmd.ExecuteNonQuery();
-											cmd.Dispose();
-										}
+										SQLiteCommand cmd = universeDB.CreateCommand();
+										string sql = "UPDATE kmpPlayer SET Name='@username', Guid='@guid' WHERE Name LIKE '@username' OR Guid = '@guid';";
+										cmd.CommandText = sql;
+                                        cmd.Parameters.AddWithValue("username", username_lower);
+                                        cmd.Parameters.AddWithValue("guid", guid);
+										cmd.ExecuteNonQuery();
+										cmd.Dispose();
                                         Log.Info("Updated roster with player '" + args[0] + "' and token '" + args[1] + "'.");
 									}
 									catch (FormatException)
@@ -717,13 +690,11 @@ namespace KMPServer
 					while (clientMessageQueue.Count > 0)
 					{
 						ClientMessage message;
-						
-						message = clientMessageQueue.Dequeue();
-						
-						//if (clientMessageQueue.TryDequeue(out message))
-						handleMessage(clients[message.clientIndex], message.id, message.data);
-//						else
-//							break;
+											
+						if (clientMessageQueue.TryDequeue(out message))
+							handleMessage(message.client, message.id, message.data);
+						else
+							break;
 					}
 
                     foreach (var client in clients.Where(c => c.isValid))
@@ -744,6 +715,7 @@ namespace KMPServer
                         {
                             //Disconnect the client
                             disconnectClient(client, "Timeout");
+							postDisconnectCleanup(client);
                         }
                         else
                         {
@@ -774,11 +746,18 @@ namespace KMPServer
                         } 
                     }
 					
+					List<ServerClient> disconnectedClients = new List<ServerClient>();
 					foreach (var client in clients.Where(c => !c.isValid))
                     {
                         //Client is disconnected but slot has not been cleaned up
                         disconnectClient(client, "Connection lost");
+						disconnectedClients.Add(client);
                     }
+					foreach (var client in disconnectedClients)
+					{
+						//Perform final cleanup afterward to prevent an InvalidOperationError
+						postDisconnectCleanup(client);
+					}
 					
 					Thread.Sleep(SLEEP_TIME);
 				}
@@ -824,26 +803,15 @@ namespace KMPServer
 		private ServerClient addClient(TcpClient tcp_client)
 		{
 
-			if (tcp_client == null || !tcp_client.Connected)
+			if (tcp_client == null || !tcp_client.Connected || clients.Count >= settings.maxClients)
 				return null;
-
-			//Find an open client slot
-            var replaceSlot = clients.Where(c => c.canBeReplaced && !c.isValid).FirstOrDefault();
-
-            if (replaceSlot != null)
-            {
-                replaceSlot.tcpClient = tcp_client;
-
-                //Reset client properties
-                replaceSlot.resetProperties();
-
-                replaceSlot.startReceivingMessages();
-                numClients++;
-
-                return replaceSlot;
-            }
-
-            return null;
+			ServerClient newClient = new ServerClient(this);
+			newClient.tcpClient = tcp_client;
+			newClient.resetProperties();
+			newClient.startReceivingMessages();
+			clients.Add(newClient);
+			newClient.clientIndex = clients.IndexOf(newClient);
+			return newClient;
 		}
 
 		public void disconnectClient(ServerClient cl, String message)
@@ -863,11 +831,6 @@ namespace KMPServer
 						cl.tcpClient.Close();
 					}
 				}
-	
-				if (cl.canBeReplaced)
-					return;
-	
-				numClients--;
 	
 				//Only send the disconnect message if the client performed handshake successfully
 				if (cl.receivedHandshake)
@@ -939,37 +902,31 @@ namespace KMPServer
 				sendServerSettingsToAll();
 			
 			cl.disconnected();
+			
 		}
-
+		
+		public void postDisconnectCleanup(ServerClient client)
+		{
+			if (clients.Contains (client)) clients.Remove(client);
+			if (flight_clients.Contains (client)) flight_clients.Remove(client);
+			client = null;
+			if (clients.Count > 0) backedUpSinceEmpty = false;
+		}
+		
 		public void clientActivityLevelChanged(ServerClient cl)
 		{
 			Log.Activity(cl.username + " activity level is now " + cl.activityLevel);
-			
-			//Count the number of in-game/in-flight clients
-			int num_in_game = 0;
-			int num_in_flight = 0;
 
-            foreach (var client in clients.Where(c => c.isValid))
+            switch (cl.activityLevel)
             {
-                switch (client.activityLevel)
-                {
-                    case ServerClient.ActivityLevel.IN_GAME:
-                        num_in_game++;
-                        break;
+                case ServerClient.ActivityLevel.IN_GAME:
+					if (flight_clients.Contains(cl)) flight_clients.Remove(cl);
+                    break;
 
-                    case ServerClient.ActivityLevel.IN_FLIGHT:
-                        num_in_game++;
-                        num_in_flight++;
-                        break;
-                }
+                case ServerClient.ActivityLevel.IN_FLIGHT:
+                    if (!flight_clients.Contains(cl)) flight_clients.Add(cl);
+                    break;
             }
-
-			lock (clientActivityCountLock)
-			{
-				numInGameClients = num_in_game;
-				numInFlightClients = num_in_flight;
-			}
-			if (numInGameClients > 0) backedUpSinceEmpty = false;
 			
 			sendServerSettingsToAll();
 		}
@@ -1063,7 +1020,7 @@ namespace KMPServer
 				response_builder.Append('\n');
 
 				response_builder.Append("Num Players: ");
-				response_builder.Append(numClients);
+				response_builder.Append(clients.Count);
 				response_builder.Append('/');
 				response_builder.Append(settings.maxClients);
 				response_builder.Append('\n');
@@ -1128,7 +1085,7 @@ namespace KMPServer
 		public void queueClientMessage(ServerClient cl, KMPCommon.ClientMessageID id, byte[] data)
 		{
 			ClientMessage message = new ClientMessage();
-			message.clientIndex = cl.clientIndex;
+			message.client = cl;
 			message.id = id;
 			message.data = data;
 
@@ -1171,14 +1128,16 @@ namespace KMPServer
                         if (clients.Any(c => c.isReady && c.username.ToLower() == username_lower))
                         {
                             disconnectClient(cl, "Your username is already in use.");
-								Log.Info("Rejected client due to duplicate username: " + username);
-								accepted = false;
+							postDisconnectCleanup(cl);
+							Log.Info("Rejected client due to duplicate username: " + username);
+							accepted = false;
                         }
 
                         //If whitelisting is enabled and the user is *not* on the list:
                         if (settings.whitelisted && settings.whitelist.Contains(username, StringComparer.InvariantCultureIgnoreCase) == false)
                         {
                             disconnectClient(cl, "You are not on this servers whitelist.");
+							postDisconnectCleanup(cl);
                             Log.Info("Rejected client due to not being on the whitelist: " + username);
                             accepted = false;
                         }
@@ -1198,6 +1157,7 @@ namespace KMPServer
 						{
 							//Disconnect the player
 							disconnectClient(cl, "Your username is already claimed by an existing user.");
+							postDisconnectCleanup(cl);
 							Log.Info("Rejected client due to duplicate username w/o matching guid: " + username);
 							break;
 						}
@@ -1226,7 +1186,7 @@ namespace KMPServer
 						cmd.Dispose();
 					    
 						//Send the active user count to the client
-						if (numClients == 2)
+						if (clients.Count == 2)
 						{
 							//Get the username of the other user on the server
 							sb.Append("There is currently 1 other user on this server: ");
@@ -1240,9 +1200,9 @@ namespace KMPServer
 						else
 						{
 							sb.Append("There are currently ");
-							sb.Append(numClients - 1);
+							sb.Append(clients.Count - 1);
 							sb.Append(" other users on this server.");
-							if (numClients > 1)
+							if (clients.Count > 1)
 							{
 								sb.Append(" Enter !list to see them.");
 							}
@@ -1348,6 +1308,7 @@ namespace KMPServer
 						message = encoder.GetString(data, 0, data.Length); //Decode the message
 
 					disconnectClient(cl, message); //Disconnect the client
+					postDisconnectCleanup(cl);
 					break;
 
 				case KMPCommon.ClientMessageID.SHARE_CRAFT_FILE:
@@ -1460,17 +1421,26 @@ namespace KMPServer
 								cmd.Dispose();
 							}
 						
-							if (lastTick - tick > 0.1d)
+							if (lastTick - tick > 0.15d)
 							{
 								sendSyncMessage(cl,lastTick+cl.syncOffset);
-								cl.syncOffset += 0.05d;
-								if (cl.lagWarning > 300) disconnectClient(cl,"Your game was running too slowly compared to other players. Please try reconnecting in a moment.");
-								else cl.lagWarning++;
+								if (cl.receivedHandshake)
+								{
+									cl.syncOffset += 0.001d;
+									if (cl.syncOffset > 0.5d) cl.syncOffset = 0.5d;
+									Log.Debug("Sending time-sync to " + cl.username + " current offset " + cl.syncOffset);
+									if (cl.lagWarning > 5000)
+									{
+										disconnectClient(cl,"Your game was running too slowly compared to other players. Please try reconnecting in a moment.");
+										postDisconnectCleanup(cl);
+									}
+									else cl.lagWarning++;
+								}
 							}
 							else
 							{
 								cl.lagWarning = 0;
-								if (cl.syncOffset > 0.05d) cl.syncOffset -= 0.01d;
+								if (cl.syncOffset > 0.001d) cl.syncOffset -= 0.0005d;
 								cmd = universeDB.CreateCommand();
 								sql = "UPDATE kmpSubspace SET LastTick = " + tick.ToString("0.0").Replace(",",".") + " WHERE ID = " + cl.currentSubspaceID.ToString("D") + " AND LastTick < " + tick.ToString("0.0").Replace(",",".");
 								cmd.CommandText = sql;
@@ -1726,6 +1696,7 @@ namespace KMPServer
 				else if (message_lower == "!quit")
 				{
 					disconnectClient(cl, "Requested quit");
+					postDisconnectCleanup(cl);
 					return;
 				}
 				else if (message_lower.Length > (KMPCommon.GET_CRAFT_COMMAND.Length + 1)
@@ -2298,24 +2269,14 @@ namespace KMPServer
             {
                 bool match = false;
 
-					lock (client.watchPlayerNameLock)
-					{
-						match = client.watchPlayerName == cl.username;
-					}
-
-					if (match)
-						watcher_indices.Add(client.clientIndex);
-            }
-
-			if (watcher_indices.Count > 0)
-			{
-				//Build the message and send it to all watchers
-				byte[] message_bytes = buildMessageArray(KMPCommon.ServerMessageID.SCREENSHOT_SHARE, bytes);
-				foreach (int i in watcher_indices)
+				lock (client.watchPlayerNameLock)
 				{
-					clients[i].queueOutgoingMessage(message_bytes);
+					match = client.watchPlayerName == cl.username;
 				}
-			}
+
+				if (match)
+					client.queueOutgoingMessage(message_bytes);
+            }
 		}
 
 		private void sendCraftFile(ServerClient cl, String craft_name, byte[] data, byte type)
