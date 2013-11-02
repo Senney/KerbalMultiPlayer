@@ -304,7 +304,7 @@ namespace KMP
 				try
 				{
 					double currentTick = Planetarium.GetUniversalTime();
-					if (isInFlight && targetTick > currentTick)
+					if (isInFlight && targetTick > currentTick+0.05d)
 					{
 						KMPClientMain.DebugLog("Syncing to new time " + targetTick + " from " + Planetarium.GetUniversalTime());
 						if (FlightGlobals.ActiveVessel.situation != Vessel.Situations.PRELAUNCH
@@ -335,15 +335,18 @@ namespace KMP
 				            catch (NullReferenceException)
 				            {
 				            }
-							//Krakensbane shift to new orbital location to prevent vessel destruction
-							KMPClientMain.DebugLog("Krakensbane shift");
-							Vector3d diffPos = FlightGlobals.ActiveVessel.orbit.getPositionAtUT(targetTick) - FlightGlobals.ActiveVessel.GetWorldPos3D();
-							foreach (Vessel otherVessel in FlightGlobals.Vessels.Where(v => v.packed == false && (v.id != FlightGlobals.ActiveVessel.id || (v.loaded && Vector3d.Distance(FlightGlobals.ActiveVessel.GetWorldPos3D(),v.GetWorldPos3D()) < INACTIVE_VESSEL_RANGE))))
-	                			otherVessel.GoOnRails();
-							getKrakensbane().setOffset(diffPos);
-							//Update velocity
-							FlightGlobals.ActiveVessel.ChangeWorldVelocity((-1 * oldObtVel) + FlightGlobals.ActiveVessel.orbitDriver.orbit.getOrbitalVelocityAtUT(targetTick).xzy);
-            				FlightGlobals.ActiveVessel.orbitDriver.vel = FlightGlobals.ActiveVessel.orbit.vel;
+							//Krakensbane shift to new orbital location
+							if (targetTick > currentTick+2.5d || !FlightGlobals.ActiveVessel.orbit.referenceBody.atmosphere || FlightGlobals.ActiveVessel.orbit.altitude > FlightGlobals.ActiveVessel.orbit.referenceBody.maxAtmosphereAltitude)
+							{
+								KMPClientMain.DebugLog("Krakensbane shift");
+								Vector3d diffPos = FlightGlobals.ActiveVessel.orbit.getPositionAtUT(targetTick) - FlightGlobals.ActiveVessel.GetWorldPos3D();
+								foreach (Vessel otherVessel in FlightGlobals.Vessels.Where(v => v.packed == false && (v.id != FlightGlobals.ActiveVessel.id || (v.loaded && Vector3d.Distance(FlightGlobals.ActiveVessel.GetWorldPos3D(),v.GetWorldPos3D()) < INACTIVE_VESSEL_RANGE))))
+		                			otherVessel.GoOnRails();
+								getKrakensbane().setOffset(diffPos);
+								//Update velocity
+								FlightGlobals.ActiveVessel.ChangeWorldVelocity((-1 * oldObtVel) + FlightGlobals.ActiveVessel.orbitDriver.orbit.getOrbitalVelocityAtUT(targetTick).xzy);
+	            				FlightGlobals.ActiveVessel.orbitDriver.vel = FlightGlobals.ActiveVessel.orbit.vel;
+							}
 						}
 						Planetarium.SetUniversalTime(targetTick);
 						KMPClientMain.DebugLog("sync completed");
@@ -415,14 +418,19 @@ namespace KMP
 				
 				
 				//Prevent cases of remaining unfixed NREs from remote vessel updates from creating an inconsistent game state
-				if (HighLogic.fetch.log.Count > 100)
+				if (HighLogic.fetch.log.Count > 100 && isInFlight && !syncing)
 				{
-					bool allNRE = true;
-					foreach (HighLogic.LogEntry logEntry in HighLogic.fetch.log.GetRange(HighLogic.fetch.log.Count-25,25))
+					bool forceResync = false; int nreCount = 0;
+					foreach (HighLogic.LogEntry logEntry in HighLogic.fetch.log.GetRange(HighLogic.fetch.log.Count-50,50))
 			        {
-						if (!logEntry.condition.Contains("NullReferenceException")) allNRE = false;
+						if (logEntry.condition.Contains("NullReferenceException")) nreCount++;
+						if (nreCount >= 25)
+						{
+							forceResync = true;
+							break;
+						}
 					}
-					if (allNRE)
+					if (forceResync)
 					{
 						KMPClientMain.DebugLog("Resynced due to NRE flood");
 						ScreenMessages.PostScreenMessage("Unexpected error! Re-syncing...");
@@ -450,10 +458,13 @@ namespace KMP
 		
 		private void kickToTrackingStation()
 		{
-			KMPClientMain.DebugLog("Selected unavailable vessel, switching");
-			ScreenMessages.PostScreenMessage("Selected vessel is occupied or private...", 5f,ScreenMessageStyle.UPPER_RIGHT);
-			syncing = true;
-			StartCoroutine(returnToTrackingStation());
+			if (!syncing)
+			{
+				KMPClientMain.DebugLog("Selected unavailable vessel, switching");
+				ScreenMessages.PostScreenMessage("Selected vessel is occupied or private...", 5f,ScreenMessageStyle.UPPER_RIGHT);
+				syncing = true;
+				StartCoroutine(returnToTrackingStation());
+			}
 		}
 		
 		private void writeUpdates()
@@ -1199,7 +1210,7 @@ namespace KMP
 		private IEnumerator<WaitForFixedUpdate> returnToSpaceCenter()
 		{
 			yield return new WaitForFixedUpdate();
-			if (FlightGlobals.ClearToSave() == ClearToSaveStatus.CLEAR)
+			if (FlightGlobals.ClearToSave() == ClearToSaveStatus.CLEAR || !isInFlight || FlightGlobals.ActiveVessel.state == Vessel.State.DEAD)
 			{
 				GamePersistence.SaveGame("persistent",HighLogic.SaveFolder,SaveMode.OVERWRITE);
 				HighLogic.LoadScene(GameScenes.SPACECENTER);
@@ -2823,6 +2834,14 @@ namespace KMP
 						);
 				}
 			}
+
+			
+		    if(!gameRunning)
+     	    {
+         		//close the windows if not connected to a server 
+       	 	    KMPScreenshotDisplay.windowEnabled = false;
+      		    KMPGlobalSettings.instance.chatWindowEnabled = false;
+ 		    }
 			
 			if (KMPScreenshotDisplay.windowEnabled)
 			{
