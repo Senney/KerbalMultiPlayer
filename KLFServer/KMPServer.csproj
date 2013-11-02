@@ -54,6 +54,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ClientHandshake.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="ScreenshotManager.cs" />
     <Compile Include="ServerClient.cs" />
